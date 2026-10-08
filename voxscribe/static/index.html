@@ -1,0 +1,378 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>VoxScribe</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --paper: #f2f4f8;
+    --panel: #ffffff;
+    --ink: #101828;
+    --muted: #4a5568;
+    --line: #d5dae3;
+    --accent: #4527d9;
+    --accent-ink: #ffffff;
+    --live: #c4262e;
+    --ok: #0b6b4f;
+    --sans: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+    --serif: "Source Serif 4", Georgia, "Times New Roman", serif;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--paper); color: var(--ink);
+    font: 400 16px/1.5 var(--sans);
+  }
+  header { max-width: 1120px; margin: 0 auto; padding: 28px 24px 8px; }
+  h1 { margin: 0; font: 600 28px/1.2 var(--sans); letter-spacing: -0.01em; }
+  header p { margin: 4px 0 0; color: var(--muted); }
+  main {
+    max-width: 1120px; margin: 0 auto; padding: 16px 24px 40px;
+    display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 24px;
+  }
+  .stage {
+    background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
+    padding: 24px; display: flex; flex-direction: column; min-height: 520px;
+  }
+  .transcript {
+    flex: 1; font: 400 26px/1.55 var(--serif); max-width: 62ch;
+    white-space: pre-wrap; overflow-wrap: anywhere; outline-offset: 6px;
+  }
+  .transcript.empty { color: var(--muted); font-style: italic; }
+  .statusbar {
+    display: flex; align-items: center; gap: 10px; margin-top: 16px;
+    padding-top: 14px; border-top: 1px solid var(--line); color: var(--muted); font-size: 14px;
+  }
+  .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--line); flex: none; }
+  .on .dot { background: var(--live); animation: pulse 1.4s ease-in-out infinite; }
+  @keyframes pulse { 50% { opacity: .35; } }
+  .spacer { flex: 1; }
+  .actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 14px; }
+  button {
+    font: 500 15px var(--sans); color: var(--ink); background: var(--panel);
+    border: 1px solid var(--line); border-radius: 8px; padding: 9px 14px; cursor: pointer;
+  }
+  button:hover { border-color: var(--ink); }
+  :focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+  aside { display: flex; flex-direction: column; gap: 16px; }
+  .card {
+    background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 18px;
+  }
+  .card h2 { margin: 0 0 8px; font: 600 16px var(--sans); }
+  #meter { width: 100%; height: 72px; display: block; }
+  #mic {
+    width: 100%; margin-top: 12px; padding: 14px; font-size: 17px; font-weight: 600;
+    background: var(--accent); color: var(--accent-ink); border-color: var(--accent);
+  }
+  #mic[aria-pressed="true"] { background: var(--live); border-color: var(--live); }
+  .hint { margin: 8px 0 0; color: var(--muted); font-size: 14px; }
+  dl { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; font-size: 15px; }
+  dt { font-weight: 600; }
+  dd { margin: 0; color: var(--muted); }
+  ol { margin: 0; padding-left: 20px; }
+  ol li { margin-bottom: 8px; }
+  ol time { display: block; color: var(--muted); font-size: 13px; }
+  .empty-note { margin: 0; color: var(--muted); font-size: 14px; }
+  label { display: flex; align-items: center; gap: 10px; margin-top: 10px; font-size: 15px; }
+  input[type="range"] { flex: 1; accent-color: var(--accent); }
+  details > summary { cursor: pointer; font-weight: 600; }
+  details[open] > summary { margin-bottom: 8px; }
+  #toast {
+    position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%);
+    background: var(--ink); color: #fff; padding: 10px 16px; border-radius: 8px;
+    font-size: 15px; opacity: 0; pointer-events: none; transition: opacity .2s;
+    max-width: calc(100vw - 32px);
+  }
+  #toast.show { opacity: 1; }
+  #toast.error { background: var(--live); }
+  @media (max-width: 900px) {
+    main { grid-template-columns: 1fr; }
+    .stage { min-height: 360px; }
+    .transcript { font-size: 22px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .on .dot { animation: none; }
+    #toast { transition: none; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>VoxScribe</h1>
+  <p>Speak, and your words appear as text. Say a command to act on them.</p>
+</header>
+
+<main>
+  <section class="stage" aria-label="Transcript">
+    <div id="transcript" class="transcript empty" role="log" aria-live="polite" tabindex="0">Press Start listening and begin speaking.</div>
+    <div class="statusbar" id="statusbar">
+      <span class="dot" aria-hidden="true"></span>
+      <span id="status">Microphone is off</span>
+      <span class="spacer"></span>
+      <span id="latency"></span>
+    </div>
+    <div class="actions">
+      <button id="copy" type="button">Copy text</button>
+      <button id="download" type="button">Download text</button>
+      <button id="clear" type="button">Clear text</button>
+    </div>
+  </section>
+
+  <aside>
+    <div class="card">
+      <canvas id="meter" width="600" height="90" role="img" aria-label="Microphone level"></canvas>
+      <button id="mic" type="button" aria-pressed="false">Start listening</button>
+      <p class="hint">Keyboard shortcut: M</p>
+    </div>
+
+    <details class="card" open>
+      <summary>Voice commands</summary>
+      <dl>
+        <dt>Save note</dt><dd>Keeps the current text in the notes list</dd>
+        <dt>Clear text</dt><dd>Empties the transcript</dd>
+        <dt>Copy text</dt><dd>Copies the transcript</dd>
+        <dt>Download text</dt><dd>Saves a .txt file</dd>
+        <dt>Open settings</dt><dd>Shows or hides settings</dd>
+        <dt>Search for ...</dt><dd>Searches the web for your words</dd>
+        <dt>Stop listening</dt><dd>Turns the microphone off</dd>
+      </dl>
+    </details>
+
+    <div class="card">
+      <h2>Saved notes</h2>
+      <p class="empty-note" id="no-notes">Say "save note" to keep the current text here.</p>
+      <ol id="notes"></ol>
+    </div>
+
+    <details class="card" id="settings">
+      <summary>Settings</summary>
+      <label for="sens">Microphone sensitivity
+        <input id="sens" type="range" min="1" max="10" value="5">
+      </label>
+      <label for="denoise">
+        <input id="denoise" type="checkbox" checked> Reduce background noise
+      </label>
+    </details>
+  </aside>
+</main>
+
+<div id="toast" role="status" aria-live="polite"></div>
+
+<script>
+(() => {
+  const $ = (id) => document.getElementById(id);
+  const TARGET_RATE = 16000;
+  const el = {
+    mic: $('mic'), transcript: $('transcript'), status: $('status'), bar: $('statusbar'),
+    latency: $('latency'), meter: $('meter'), notes: $('notes'), noNotes: $('no-notes'),
+    toast: $('toast'), sens: $('sens'), denoise: $('denoise'), settings: $('settings'),
+  };
+  const PLACEHOLDER = 'Press Start listening and begin speaking.';
+  const st = {
+    on: false, ctx: null, stream: null, node: null, src: null,
+    pre: [], buf: [], speaking: false, silent: 0, total: 0,
+    queue: Promise.resolve(), pending: 0, text: '', levels: new Array(60).fill(0),
+  };
+  let toastTimer = null;
+  const notes = [];
+
+  /* ---------- helpers ---------- */
+  const threshold = () => 0.05 / Number(el.sens.value);
+  const setStatus = (msg) => { el.status.textContent = msg; };
+  function toast(msg, isError = false) {
+    el.toast.textContent = msg;
+    el.toast.className = 'show' + (isError ? ' error' : '');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => { el.toast.className = ''; }, 3200);
+  }
+  function renderText() {
+    const empty = !st.text.trim();
+    el.transcript.textContent = empty ? PLACEHOLDER : st.text;
+    el.transcript.classList.toggle('empty', empty);
+  }
+  function appendText(text) {
+    st.text = st.text ? st.text + ' ' + text : text;
+    renderText();
+  }
+
+  /* ---------- audio helpers ---------- */
+  function merge(chunks) {
+    const out = new Float32Array(chunks.reduce((n, c) => n + c.length, 0));
+    let o = 0;
+    for (const c of chunks) { out.set(c, o); o += c.length; }
+    return out;
+  }
+  function downsample(input, inRate, outRate) {
+    if (inRate === outRate) return input;
+    const ratio = inRate / outRate, n = Math.floor(input.length / ratio);
+    const out = new Float32Array(n);
+    for (let i = 0; i < n; i++) {
+      const pos = i * ratio, i0 = Math.floor(pos);
+      const i1 = Math.min(i0 + 1, input.length - 1), f = pos - i0;
+      out[i] = input[i0] * (1 - f) + input[i1] * f;
+    }
+    return out;
+  }
+  function encodeWav(samples, rate) {
+    const buf = new ArrayBuffer(44 + samples.length * 2), v = new DataView(buf);
+    const str = (o, s) => { for (let i = 0; i < s.length; i++) v.setUint8(o + i, s.charCodeAt(i)); };
+    str(0, 'RIFF'); v.setUint32(4, 36 + samples.length * 2, true); str(8, 'WAVE');
+    str(12, 'fmt '); v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
+    v.setUint32(24, rate, true); v.setUint32(28, rate * 2, true); v.setUint16(32, 2, true);
+    v.setUint16(34, 16, true); str(36, 'data'); v.setUint32(40, samples.length * 2, true);
+    for (let i = 0; i < samples.length; i++) {
+      const s = Math.max(-1, Math.min(1, samples[i]));
+      v.setInt16(44 + i * 2, s < 0 ? s * 0x8000 : s * 0x7fff, true);
+    }
+    return new Blob([buf], { type: 'audio/wav' });
+  }
+
+  /* ---------- level meter ---------- */
+  function drawMeter() {
+    const c = el.meter, g = c.getContext('2d'), w = c.width, h = c.height;
+    g.clearRect(0, 0, w, h);
+    const bw = w / st.levels.length;
+    st.levels.forEach((lvl, i) => {
+      const bh = Math.max(3, Math.min(h, lvl * 6 * h));
+      g.fillStyle = lvl > threshold() ? '#4527d9' : '#aab2c2';
+      g.fillRect(i * bw + 1, (h - bh) / 2, bw - 2, bh);
+    });
+  }
+
+  /* ---------- capture and segmenting ---------- */
+  function onFrame(frame) {
+    let sum = 0;
+    for (let i = 0; i < frame.length; i++) sum += frame[i] * frame[i];
+    const rms = Math.sqrt(sum / frame.length);
+    st.levels.push(rms); st.levels.shift(); drawMeter();
+
+    const loud = rms > threshold(), rate = st.ctx.sampleRate;
+    if (!st.speaking) {
+      st.pre.push(frame); if (st.pre.length > 3) st.pre.shift();
+      if (loud) {
+        st.speaking = true; st.buf = st.pre.slice(); st.pre = []; st.silent = 0;
+        st.total = st.buf.reduce((n, f) => n + f.length, 0);
+        if (!st.pending) setStatus('Hearing you...');
+      }
+      return;
+    }
+    st.buf.push(frame); st.total += frame.length;
+    st.silent = loud ? 0 : st.silent + frame.length;
+    if (st.silent > 0.9 * rate || st.total > 12 * rate) flush();
+  }
+  function flush() {
+    const rate = st.ctx.sampleRate, merged = merge(st.buf);
+    st.buf = []; st.speaking = false; st.silent = 0; st.total = 0;
+    if (merged.length < 0.4 * rate) { if (!st.pending) setStatus('Listening...'); return; }
+    send(encodeWav(downsample(merged, rate, TARGET_RATE), TARGET_RATE));
+  }
+  function send(wav) {
+    st.pending++; setStatus('Transcribing...');
+    st.queue = st.queue.then(async () => {
+      try {
+        const res = await fetch('/api/transcribe?denoise=' + (el.denoise.checked ? 1 : 0), {
+          method: 'POST', headers: { 'Content-Type': 'audio/wav' }, body: wav,
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Request failed');
+        handleResult(data);
+      } catch (err) {
+        toast('Could not transcribe: ' + err.message, true);
+      } finally {
+        st.pending--;
+        if (st.on) setStatus(st.pending ? 'Transcribing...' : 'Listening...');
+      }
+    });
+  }
+  function handleResult(data) {
+    if (!data.text) return;
+    el.latency.textContent = 'Last result in ' + data.latency_ms + ' ms';
+    if (data.command) runCommand(data.command); else appendText(data.text);
+  }
+
+  /* ---------- commands ---------- */
+  function saveNote() {
+    if (!st.text.trim()) { toast('Nothing to save yet'); return; }
+    const li = document.createElement('li'), t = document.createElement('time');
+    t.textContent = new Date().toLocaleTimeString();
+    li.append(document.createTextNode(st.text), t);
+    el.notes.prepend(li); notes.push(st.text);
+    el.noNotes.hidden = true;
+  }
+  function clearText() { st.text = ''; renderText(); }
+  async function copyText() {
+    try { await navigator.clipboard.writeText(st.text); toast('Text copied'); }
+    catch { toast('Copy was blocked by the browser', true); }
+  }
+  function downloadText() {
+    if (!st.text.trim()) { toast('Nothing to download yet'); return; }
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([st.text], { type: 'text/plain' }));
+    a.download = 'voxscribe-transcript.txt'; a.click(); URL.revokeObjectURL(a.href);
+  }
+  function runCommand(cmd) {
+    const label = cmd.action === 'search' ? 'search for ' + cmd.query : cmd.phrase;
+    toast('Command: ' + label);
+    switch (cmd.action) {
+      case 'stop': stop(); break;
+      case 'save_note': saveNote(); break;
+      case 'clear': clearText(); break;
+      case 'copy': copyText(); break;
+      case 'download': downloadText(); break;
+      case 'settings': el.settings.open = !el.settings.open; break;
+      case 'search':
+        window.open('https://www.google.com/search?q=' + encodeURIComponent(cmd.query), '_blank', 'noopener');
+        break;
+    }
+  }
+
+  /* ---------- start / stop ---------- */
+  async function start() {
+    try {
+      st.stream = await navigator.mediaDevices.getUserMedia({
+        audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true },
+      });
+    } catch (err) {
+      toast(err.name === 'NotAllowedError'
+        ? 'Microphone access was blocked. Allow it in the browser address bar.'
+        : 'No microphone found.', true);
+      return;
+    }
+    st.ctx = new (window.AudioContext || window.webkitAudioContext)();
+    st.src = st.ctx.createMediaStreamSource(st.stream);
+    st.node = st.ctx.createScriptProcessor(4096, 1, 1);
+    st.node.onaudioprocess = (e) => onFrame(new Float32Array(e.inputBuffer.getChannelData(0)));
+    st.src.connect(st.node); st.node.connect(st.ctx.destination);
+    st.on = true; st.pre = []; st.buf = []; st.speaking = false;
+    el.mic.textContent = 'Stop listening'; el.mic.setAttribute('aria-pressed', 'true');
+    el.bar.classList.add('on'); setStatus('Listening...');
+  }
+  function stop() {
+    if (!st.on) return;
+    if (st.speaking) flush();
+    st.on = false;
+    st.node.disconnect(); st.src.disconnect();
+    st.stream.getTracks().forEach((t) => t.stop());
+    st.ctx.close();
+    el.mic.textContent = 'Start listening'; el.mic.setAttribute('aria-pressed', 'false');
+    el.bar.classList.remove('on');
+    setStatus(st.pending ? 'Finishing last words...' : 'Microphone is off');
+    st.levels.fill(0); drawMeter();
+  }
+
+  el.mic.addEventListener('click', () => (st.on ? stop() : start()));
+  $('copy').addEventListener('click', copyText);
+  $('download').addEventListener('click', downloadText);
+  $('clear').addEventListener('click', clearText);
+  document.addEventListener('keydown', (e) => {
+    if (e.key.toLowerCase() === 'm' && !e.ctrlKey && !e.metaKey && !e.altKey &&
+        !/input|textarea/i.test(e.target.tagName)) { st.on ? stop() : start(); }
+  });
+  drawMeter();
+})();
+</script>
+</body>
+</html>

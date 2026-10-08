@@ -1,0 +1,4 @@
+audio,reference,condition,expected_action
+data/quiet_01.wav,The quick brown fox jumps over the lazy dog,quiet,
+data/noisy_01.wav,The quick brown fox jumps over the lazy dog,noisy,
+data/cmd_save.wav,save note,quiet,save_note
